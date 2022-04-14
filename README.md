@@ -9,6 +9,8 @@
 
 ## Editor 工具
 - `NormalsVisualizer` 模型法线可视化
+- `ExportTerrain` 将 Unity 地形导出成 obj 格式的模型
+- `ObjExporter` 将 Mesh 导出成 obj 格式模型
 
 ## 工具类
 - `RectTransformUtility` RectTransform 工具类
