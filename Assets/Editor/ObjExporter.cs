@@ -1,109 +1,353 @@
-﻿using UnityEngine;
-using UnityEditor;
-using System.Collections;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
+using UnityEditor;
+using UnityEngine;
 
-// 将 Mesh 导出成 obj 格式模型
-public class ObjExporter : EditorWindow {
+/*
+How to use?
+    1. Put this script in your "Editor" folder.
+    2. Select the menu item from "Tools->Export".
+*/
 
-    [MenuItem("Tools/ObjExporter")]
-    private static void ExportMesh()
+struct ObjMaterial
+{
+    public string name;
+    public string textureName;
+}
+
+public class ObjExporter : EditorWindow
+{
+    public List<MeshFilter> meshFilters;
+    public static string targetFolder = "ExportedObj";
+
+    protected SerializedObject serializedObject;
+    protected SerializedProperty assetLstProperty;
+
+    private Vector2 scrollPos;
+
+    ObjExporter()
     {
-        GameObject go = Selection.activeGameObject;
-        List<Material> mats = new List<Material>();
-        string dir = Path.Combine(Application.dataPath, "ObjExport/" + go.name);
-        Directory.CreateDirectory(dir);
-        BuildObj(go, ref mats, dir);
-        BuildMtl(mats, dir, go.name);
+        titleContent = new GUIContent("ObjExporter");
     }
 
-    private static void BuildObj(GameObject go, ref List<Material> mtls, string dir)
+    [MenuItem("Tools/Export/ObjExporter Window")]
+    static void CreateWindows()
     {
-        MeshFilter[] meshFilters = go.GetComponentsInChildren<MeshFilter>();
-        StringBuilder vs = new StringBuilder("mtllib " + go.name + ".mtl").AppendLine();
-        StringBuilder vts = new StringBuilder();
-        StringBuilder vns = new StringBuilder();
-        StringBuilder fs = new StringBuilder();
+        GetWindow(typeof(ObjExporter));
+    }
 
-        int o = 1;
-        for (int i = 0; i < meshFilters.Length; i++)
+    void OnEnable()
+    {
+        serializedObject = new SerializedObject(this);
+        assetLstProperty = serializedObject.FindProperty("meshFilters");
+
+        targetFolder = Application.dataPath + "/" + targetFolder;
+    }
+
+    void OnGUI()
+    {
+        serializedObject.Update();
+        scrollPos = GUILayout.BeginScrollView(scrollPos, GUILayout.Width(position.width), GUILayout.Height(position.height));
+        GUILayout.BeginVertical();
+        EditorGUILayout.HelpBox("Please select the MeshFilter of the mesh you want to export.", MessageType.Info);
+        EditorGUI.BeginChangeCheck();
+        EditorGUILayout.PropertyField(assetLstProperty, new GUIContent("MeshFilters : "), true);
+        if (EditorGUI.EndChangeCheck())
         {
-            var mf = meshFilters[i];
-            var m = mf.sharedMesh;
-            if (mf.gameObject.GetComponent<Renderer>() == null)
-            {
-                continue;
-            }
-            var mats = mf.gameObject.GetComponent<Renderer>().sharedMaterials;
-            for (int j = 0; j < m.vertexCount; j++) 
-            {
-                var v = m.vertices[j];
-                v = mf.transform.TransformPoint(v);
-                vs.AppendFormat("v {0} {1} {2}", v.x, v.y, v.z).AppendLine(); // 顶点数据
-                v = m.normals[j];
-                vns.AppendFormat("vn {0} {1} {2}", v.x, v.y, v.z).AppendLine(); // 顶点法线数据
-                v = m.uv[j];
-                vts.AppendFormat("vt {0} {1}", v.x, v.y).AppendLine(); // 贴图坐标数据
-            }
-            for (int u = 0; u < m.subMeshCount; u++)
-            {
-                var mat = mats[u];
-                if (!mtls.Contains(mat))
-                {
-                    mtls.Add(mat);
-                }
-                fs.AppendFormat("usemtl {0}", mat.name).AppendLine();
-                var tr = m.GetTriangles(u);
-                for (int k = 0; k < tr.Length; k += 3)
-                {
-                    fs.AppendFormat("f {0}/{0}/{0} {1}/{1}/{1} {2}/{2}/{2}",
-                        tr[k] + o, tr[k + 1] + o, tr[k + 2] + o).AppendLine(); // 网格面数据
-                }
-            }
-            o += m.vertexCount;
+            serializedObject.ApplyModifiedProperties();
+        }
+        EditorGUILayout.HelpBox("Please input the target folder.", MessageType.Info);
+        targetFolder = EditorGUILayout.TextField(new GUIContent("TargetFolder : "), targetFolder);
+        EditorGUILayout.HelpBox("The OBJs will be saved in your project root directory.", MessageType.Info);
+        if (GUILayout.Button("Export OBJs"))
+        {
+            ExportOBJsByObjExporterWindow();
+        }
+        GUILayout.EndVertical();
+        GUILayout.EndScrollView();
+    }
+
+    void ExportOBJsByObjExporterWindow()
+    {
+        if (!CreateTargetFolder())
+            return;
+
+        if (meshFilters.Count == 0)
+        {
+            EditorUtility.DisplayDialog("No MeshFilters in the list!", "Please select one or more MeshFilters", "OK");
+            return;
         }
 
-        StringBuilder meshBuilder = new StringBuilder();
-        meshBuilder.Append(vs.ToString());
-        meshBuilder.Append(vns.ToString());
-        meshBuilder.Append(vts.ToString());
-        meshBuilder.Append(fs.ToString());
+        int exportedObjects = 0;
 
-        using (StreamWriter sw = new StreamWriter(Path.Combine(dir, go.name + ".obj"), false))
+        for (int i = 0; i < meshFilters.Count; i++)
         {
-            sw.Write(meshBuilder.ToString());
+            exportedObjects++;
+            MeshToFile(meshFilters[i], targetFolder, meshFilters[i].name);
+        }
+
+        if (exportedObjects > 0)
+            EditorUtility.DisplayDialog("Objects exported", "Exported " + exportedObjects + " objects", "OK");
+        else
+            EditorUtility.DisplayDialog("Objects not exported", "Make sure at least some of your selected objects have mesh filters!", "OK");
+
+        meshFilters.Clear();
+        GetWindow(typeof(ObjExporter)).Repaint();
+    }
+
+    private static int vertexOffset = 0;
+    private static int normalOffset = 0;
+    private static int uvOffset = 0;
+
+    private static string MeshToString(MeshFilter mf, Dictionary<string, ObjMaterial> materialList)
+    {
+        Mesh m = mf.sharedMesh;
+        Material[] mats = mf.GetComponent<Renderer>().sharedMaterials;
+
+        StringBuilder sb = new StringBuilder();
+
+        sb.Append("g ").Append(mf.name).Append("\n");
+        foreach (Vector3 lv in m.vertices)
+        {
+            Vector3 wv = mf.transform.TransformPoint(lv);
+            sb.Append(string.Format("v {0} {1} {2}\n", -wv.x, wv.y, wv.z));
+        }
+        sb.Append("\n");
+
+        foreach (Vector3 lv in m.normals)
+        {
+            Vector3 wv = mf.transform.TransformDirection(lv);
+
+            sb.Append(string.Format("vn {0} {1} {2}\n", -wv.x, wv.y, wv.z));
+        }
+        sb.Append("\n");
+
+        foreach (Vector3 v in m.uv)
+        {
+            sb.Append(string.Format("vt {0} {1}\n", v.x, v.y));
+        }
+
+        for (int material = 0; material < m.subMeshCount; material++)
+        {
+            sb.Append("\n");
+            sb.Append("usemtl ").Append(mats[material].name).Append("\n");
+            sb.Append("usemap ").Append(mats[material].name).Append("\n");
+
+            try
+            {
+                ObjMaterial objMaterial = new ObjMaterial
+                {
+                    name = mats[material].name
+                };
+
+                if (mats[material].mainTexture)
+                    objMaterial.textureName = AssetDatabase.GetAssetPath(mats[material].mainTexture);
+                else
+                    objMaterial.textureName = null;
+
+                materialList.Add(objMaterial.name, objMaterial);
+            }
+            catch (ArgumentException)
+            {
+
+            }
+
+
+            int[] triangles = m.GetTriangles(material);
+            for (int i = 0; i < triangles.Length; i += 3)
+            {
+                sb.Append(string.Format("f {1}/{1}/{1} {0}/{0}/{0} {2}/{2}/{2}\n",
+                    triangles[i] + 1 + vertexOffset, triangles[i + 1] + 1 + normalOffset, triangles[i + 2] + 1 + uvOffset));
+            }
+        }
+
+        vertexOffset += m.vertices.Length;
+        normalOffset += m.normals.Length;
+        uvOffset += m.uv.Length;
+
+        return sb.ToString();
+    }
+
+    private static void Clear()
+    {
+        vertexOffset = 0;
+        normalOffset = 0;
+        uvOffset = 0;
+    }
+
+    private static Dictionary<string, ObjMaterial> PrepareFileWrite()
+    {
+        Clear();
+        return new Dictionary<string, ObjMaterial>();
+    }
+
+    private static void MaterialsToFile(Dictionary<string, ObjMaterial> materialList, string folder, string filename)
+    {
+        using (StreamWriter sw = new StreamWriter(folder + Path.DirectorySeparatorChar + filename + ".mtl"))
+        {
+            foreach (KeyValuePair<string, ObjMaterial> kvp in materialList)
+            {
+                sw.Write("\n");
+                sw.Write("newmtl {0}\n", kvp.Key);
+                sw.Write("Ka  0.6 0.6 0.6\n");
+                sw.Write("Kd  0.6 0.6 0.6\n");
+                sw.Write("Ks  0.9 0.9 0.9\n");
+                sw.Write("d  1.0\n");
+                sw.Write("Ns  0.0\n");
+                sw.Write("illum 2\n");
+
+                if (kvp.Value.textureName != null)
+                {
+                    string destinationFile = kvp.Value.textureName;
+
+
+                    int stripIndex = destinationFile.LastIndexOf(Path.DirectorySeparatorChar);
+
+                    if (stripIndex >= 0)
+                        destinationFile = destinationFile.Substring(stripIndex + 1).Trim();
+
+
+                    string relativeFile = destinationFile;
+
+                    destinationFile = folder + Path.DirectorySeparatorChar + destinationFile;
+
+                    Debug.Log("Copying texture from " + kvp.Value.textureName + " to " + destinationFile);
+
+                    try
+                    {
+                        File.Copy(kvp.Value.textureName, destinationFile);
+                    }
+                    catch
+                    {
+
+                    }
+
+
+                    sw.Write("map_Kd {0}", relativeFile);
+                }
+
+                sw.Write("\n\n\n");
+            }
         }
     }
 
-    private static void BuildMtl(List<Material> mats, string dir, string name)
+    private static void MeshToFile(MeshFilter mf, string folder, string filename)
     {
-        StringBuilder mtl = new StringBuilder();
-        foreach (Material m in mats)
+        Dictionary<string, ObjMaterial> materialList = PrepareFileWrite();
+
+        using (StreamWriter sw = new StreamWriter(folder + Path.DirectorySeparatorChar + filename + ".obj"))
         {
-            mtl.AppendFormat("newmtl {0}", m.name).AppendLine();
-            if (m.HasProperty("_Color"))
+            sw.Write("mtllib ./" + filename + ".mtl\n");
+
+            sw.Write(MeshToString(mf, materialList));
+        }
+
+        MaterialsToFile(materialList, folder, filename);
+    }
+
+    private static void MeshesToFile(MeshFilter[] mf, string folder, string filename)
+    {
+        Dictionary<string, ObjMaterial> materialList = PrepareFileWrite();
+
+        using (StreamWriter sw = new StreamWriter(folder + Path.DirectorySeparatorChar + filename + ".obj"))
+        {
+            sw.Write("mtllib ./" + filename + ".mtl\n");
+
+            for (int i = 0; i < mf.Length; i++)
             {
-                Color c = m.GetColor("_Color");
-                mtl.AppendFormat("Kd {0} {1} {2}", c.r, c.g, c.b).AppendLine();
+                sw.Write(MeshToString(mf[i], materialList));
             }
-            if (m.HasProperty("_MainTex"))
+        }
+
+        MaterialsToFile(materialList, folder, filename);
+    }
+
+    private static bool CreateTargetFolder()
+    {
+        try
+        {
+            Directory.CreateDirectory(targetFolder);
+        }
+        catch
+        {
+            EditorUtility.DisplayDialog("Error!", "Failed to create target folder!", "OK");
+            return false;
+        }
+
+        return true;
+    }
+
+    [MenuItem("Tools/Export/Quickly export all MeshFilters in selection to separate OBJs")]
+    static void ExportSelectionToSeparate()
+    {
+        if (!CreateTargetFolder())
+            return;
+
+        Transform[] selection = Selection.GetTransforms(SelectionMode.Editable | SelectionMode.ExcludePrefab);
+
+        if (selection.Length == 0)
+        {
+            EditorUtility.DisplayDialog("No source object selected!", "Please select one or more target objects", "OK");
+            return;
+        }
+
+        int exportedObjects = 0;
+
+        for (int i = 0; i < selection.Length; i++)
+        {
+            Component[] meshfilter = selection[i].GetComponentsInChildren(typeof(MeshFilter));
+
+            for (int m = 0; m < meshfilter.Length; m++)
             {
-                string assetPath = AssetDatabase.GetAssetPath(m.GetTexture("_MainTex"));
-                string texName = Path.GetFileName(assetPath);
-                string exportPath = Path.Combine(dir, texName);
-                mtl.AppendFormat("map_Kd {0}", texName).AppendLine();
-                if (!File.Exists(exportPath))
-                {
-                    File.Copy(assetPath, exportPath);
-                }
+                exportedObjects++;
+                MeshToFile((MeshFilter)meshfilter[m], targetFolder, selection[i].name + "_" + i + "_" + m);
+            }
+        }
+
+        if (exportedObjects > 0)
+            EditorUtility.DisplayDialog("Objects exported", "Exported " + exportedObjects + " objects", "OK");
+        else
+            EditorUtility.DisplayDialog("Objects not exported", "Make sure at least some of your selected objects have mesh filters!", "OK");
+    }
+
+    [MenuItem("Tools/Export/Quickly export each selected to single OBJ")]
+    static void ExportEachSelectionToSingle()
+    {
+        if (!CreateTargetFolder())
+            return;
+
+        Transform[] selection = Selection.GetTransforms(SelectionMode.Editable | SelectionMode.ExcludePrefab);
+
+        if (selection.Length == 0)
+        {
+            EditorUtility.DisplayDialog("No source object selected!", "Please select one or more target objects", "OK");
+            return;
+        }
+
+        int exportedObjects = 0;
+
+        for (int i = 0; i < selection.Length; i++)
+        {
+            Component[] meshfilter = selection[i].GetComponentsInChildren(typeof(MeshFilter));
+
+            MeshFilter[] mf = new MeshFilter[meshfilter.Length];
+
+            for (int m = 0; m < meshfilter.Length; m++)
+            {
+                exportedObjects++;
+                mf[m] = (MeshFilter)meshfilter[m];
             }
 
+            MeshesToFile(mf, targetFolder, selection[i].name + "_" + i);
         }
-        using (StreamWriter sw = new StreamWriter(Path.Combine(dir, name + ".mtl"), false))
+
+        if (exportedObjects > 0)
         {
-            sw.Write(mtl.ToString());
+            EditorUtility.DisplayDialog("Objects exported", "Exported " + exportedObjects + " objects", "OK");
         }
+        else
+            EditorUtility.DisplayDialog("Objects not exported", "Make sure at least some of your selected objects have mesh filters!", "OK");
     }
- }
+}
