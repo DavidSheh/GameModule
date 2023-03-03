@@ -20,4 +20,43 @@ public static class RectTransformUtility
         rect.y -= ((1.0f - transform.pivot.y) * size.y);
         return rect;
     }
+
+    public static Rect GetScreenCoordinates(RectTransform uiElement)
+    {
+        var worldCorners = new Vector3[4];
+        uiElement.GetWorldCorners(worldCorners);
+        var result = new Rect(
+                        worldCorners[0].x,
+                        worldCorners[0].y,
+                        worldCorners[2].x - worldCorners[0].x,
+                        worldCorners[2].y - worldCorners[0].y);
+        return result;
+    }
+
+    /// <summary>
+    /// Method to get anchored position from world position
+    /// </summary>
+    /// <param name="canvas"></param>
+    /// <param name="camera"></param>
+    /// <param name="position"></param>
+    /// <returns></returns>
+    public static Vector2 WorldToAnchoredPosition(RectTransform canvas, Camera camera, Vector3 position)
+    {
+        Vector2 pos = camera.WorldToViewportPoint(position);
+
+        //Calculate position considering our percentage, using our canvas size
+        //So if canvas size is (1100,500), and percentage is (0.5,0.5), current value will be (550,250)
+        pos.x *= canvas.sizeDelta.x;
+        pos.y *= canvas.sizeDelta.y;
+
+        //The result is ready, but, this result is correct if canvas recttransform pivot is 0,0 - left lower corner.
+        //But in reality its middle (0.5,0.5) by default, so we remove the amount considering cavnas rectransform pivot.
+        //We could multiply with constant 0.5, but we will actually read the value, so if custom rect transform is passed(with custom pivot) , 
+        //returned value will still be correct.
+
+        pos.x -= canvas.sizeDelta.x * canvas.pivot.x;
+        pos.y -= canvas.sizeDelta.y * canvas.pivot.y;
+
+        return pos;
+    }
 }

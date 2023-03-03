@@ -1,7 +1,7 @@
 using System;
 using UnityEngine;
 
-public class DirectionNavigator : MonoBehaviour
+public class NavigationIndicator : MonoBehaviour
 {
     public float rotationSpeed = 2f;
     private Camera cam;
