@@ -1,6 +1,6 @@
 using UnityEngine;
 
-namespace CyStarRoad.IndicatorSystem
+namespace IndicatorSystem
 {
     /// <summary>
     /// 存储单个指示器计算后的数据，不包含任何UI信息。

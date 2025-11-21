@@ -1,7 +1,7 @@
 using System.Collections.Generic;
 using UnityEngine;
 
-namespace CyStarRoad.IndicatorSystem
+namespace IndicatorSystem
 {
     /// <summary>
     /// 核心逻辑系统，负责跟踪目标并计算指示器数据。
