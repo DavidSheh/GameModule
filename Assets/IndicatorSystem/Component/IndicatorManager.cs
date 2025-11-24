@@ -2,7 +2,7 @@ using System.Collections.Generic;
 using Game.Core;
 using UnityEngine;
 
-namespace IndicatorSystem
+namespace CyStarRoad.IndicatorSystem
 {
     /// <summary>
     /// 视图层：负责将IndicatorSystem计算出的数据渲染到UI上。

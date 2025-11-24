@@ -1,6 +1,6 @@
 using UnityEngine;
 
-namespace IndicatorSystem
+namespace CyStarRoad.IndicatorSystem
 {
     /// <summary>
     /// 指示器箭头的默认朝向
