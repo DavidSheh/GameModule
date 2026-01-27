@@ -28,7 +28,7 @@ namespace Skill
             int result = this.m_Skill.Caculate(new FixAddHp());
             if (m_Result != null) m_Result(result);
             //注意: 伤害计算结束后需要触发伤害计算结束的事件,来终止任务的执行
-            EventsMgr.GetInstance().TriigerEvent(EventsType.Skill_EndDmg, null);
+            EventsMgr.GetInstance().TrigerEvent(EventsType.Skill_EndDmg, null);
         }
     }
 }

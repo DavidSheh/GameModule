@@ -21,7 +21,7 @@ public class EventsMgr  {
     /// <summary>
     /// 事件触发
     /// </summary>
-    public void TriigerEvent(EventsType strEventKey, object param)
+    public void TrigerEvent(EventsType strEventKey, object param)
     {
         if (m_dicEvents.ContainsKey(strEventKey))
         {

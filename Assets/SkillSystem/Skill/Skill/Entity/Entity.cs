@@ -128,7 +128,7 @@ namespace Skill
             Buff buff = new Buff();
             buff.AtRound = round;
             m_BuffList.Add(buff);
-            EventsMgr.GetInstance().TriigerEvent(EventsType.Skill_AddBuff, buff);
+            EventsMgr.GetInstance().TrigerEvent(EventsType.Skill_AddBuff, buff);
         }
 
         public void Disperse(List<int> disperseList)
@@ -141,7 +141,7 @@ namespace Skill
                     list.Add(buff);
                 }
             }
-            EventsMgr.GetInstance().TriigerEvent(EventsType.Skill_Disperse, list);
+            EventsMgr.GetInstance().TrigerEvent(EventsType.Skill_Disperse, list);
         }
 
         public bool IsInvencible()
